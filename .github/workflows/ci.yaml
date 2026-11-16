@@ -12,9 +12,12 @@ concurrency:
 # Versions follow chart-base's CI (its .github/workflows/ci.yaml at 0.11.0), bumped by hand: no Renovate here.
 env:
   HELM_VERSION: v4.3.0
+  HELMFILE_VERSION: v1.8.2
   KUBECONFORM_VERSION: v0.8.0
   ACTIONLINT_VERSION: v1.7.12
   LYCHEE_VERSION: v0.24.2
+  GATEWAY_API_VERSION: v1.6.2
+  ESO_CHART_VERSION: 2.11.0
 
 jobs:
   static:
@@ -57,6 +60,52 @@ jobs:
       - name: kubeconform on Kubernetes 1.37
         run: .github/scripts/validate-manifests.sh . 1.37.0
 
+  e2e:
+    name: e2e on kind (kubernetes ${{ matrix.kubernetes }})
+    runs-on: ubuntu-24.04
+    # helmfile's Helm timeout is 600 s per phase (the rollout wait, then the smoke hook): 20 minutes at worst, plus the
+    # platform (External Secrets: 5 minutes at most) and the checks. More than twice the Helm timeout, so a hung leg
+    # cannot hold the run.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Online Boutique images are linux/amd64 only: amd64 runners. kind node images must match their kind
+        # release and are pinned by digest, as in chart-base's CI.
+        include:
+          - kubernetes: "1.33"
+            kind: v0.32.0
+            node_image: kindest/node:v1.33.12@sha256:3f5c8443c620245e4d355cfe09e96a91ead32ceaa569d3f1ca9edf0cb2fe2ff4
+          - kubernetes: "1.37"
+            kind: v0.33.0
+            node_image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install helmfile
+        run: |
+          cd "$RUNNER_TEMP"
+          version="${HELMFILE_VERSION#v}"
+          base="https://github.com/helmfile/helmfile/releases/download/${HELMFILE_VERSION}"
+          curl -fsSLO "${base}/helmfile_${version}_linux_amd64.tar.gz"
+          curl -fsSLO "${base}/helmfile_${version}_checksums.txt"
+          grep " helmfile_${version}_linux_amd64.tar.gz\$" "helmfile_${version}_checksums.txt" | sha256sum -c -
+          tar -xzf "helmfile_${version}_linux_amd64.tar.gz" helmfile
+          sudo install helmfile /usr/local/bin/helmfile
+      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          version: ${{ matrix.kind }}
+          node_image: ${{ matrix.node_image }}
+          cluster_name: boutique
+      - name: helmfile -e ci sync, then every check (Deployments, smoke hook, pages, cart, ExternalSecrets, NetworkPolicy)
+        run: .github/scripts/e2e.sh .
+
   repo-lint:
     name: workflow, scripts and docs (actionlint, shellcheck, zizmor, lychee)
     runs-on: ubuntu-24.04
@@ -98,7 +147,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [static, repo-lint]
+    needs: [static, e2e, repo-lint]
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
