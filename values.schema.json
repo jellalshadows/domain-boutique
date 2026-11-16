@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "boutique umbrella values",
+  "description": "The umbrella's own keys: one object per chart-base alias, plus the global that Helm injects. chart-base's schema checks what is under each alias; this one rejects a mistyped alias (an unknown root key would otherwise be ignored silently) and a non-boolean enabled.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {"type": "object"},
+    "frontend": {"$ref": "#/definitions/component"},
+    "productcatalogservice": {"$ref": "#/definitions/component"},
+    "currencyservice": {"$ref": "#/definitions/component"},
+    "cartservice": {"$ref": "#/definitions/component"},
+    "recommendationservice": {"$ref": "#/definitions/component"},
+    "shippingservice": {"$ref": "#/definitions/component"},
+    "checkoutservice": {"$ref": "#/definitions/component"},
+    "paymentservice": {"$ref": "#/definitions/component"},
+    "emailservice": {"$ref": "#/definitions/component"},
+    "adservice": {"$ref": "#/definitions/component"},
+    "redis-cart": {"$ref": "#/definitions/component"},
+    "loadgenerator": {"$ref": "#/definitions/component"},
+    "smoke": {"$ref": "#/definitions/component"}
+  },
+  "definitions": {
+    "component": {
+      "description": "A chart-base alias. Helm honors only a boolean at the condition path <alias>.enabled: a string such as \"false\" leaves the component in the release.",
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"}
+      }
+    }
+  }
+}

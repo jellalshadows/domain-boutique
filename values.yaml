@@ -1,0 +1,430 @@
+# Online Boutique v0.10.7 (GoogleCloudPlatform/microservices-demo, commit 5b608cb) as a domain umbrella of chart-base.
+#
+# The consumption model: each component's whole configuration sits under its alias, and chart-base's schema checks
+# it. Components are turned on and off with `<alias>.enabled`, a real boolean (never `"false"`); nothing is configured
+# through `global`, which Helm injects and chart-base never reads. The root values.schema.json rejects a mistyped alias
+# and a non-boolean `enabled`.
+#
+# The release name is part of these values. chart-base names every object `<release>-<alias>`, so a component reaches
+# a sibling at `boutique-<alias>:<service port>`. helmfile.yaml pins the release name `boutique` (and the namespace
+# `boutique`); rendering under another release name succeeds and breaks every call between components at runtime
+# (docs/adr/0003-release-name-pinned-by-helmfile.md, docs/findings.md G1).
+#
+# Images are pinned by digest (resolved 2026-11-03, the smoke Job's agnhost on 2026-11-16; a tag can be re-pushed, a
+# digest cannot). The tag stays for the chart's version label. The Online Boutique images are linux/amd64 only.
+
+frontend:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/frontend
+    tag: v0.10.7
+    digest: sha256:e1cbd4561d3c9d27497dc0e8b1c12da194c4bf2ea82648f58bf38f073698f483
+  ports:
+    - name: http
+      containerPort: 8080
+      servicePort: 80
+  config:
+    PORT: "8080"
+    PRODUCT_CATALOG_SERVICE_ADDR: boutique-productcatalogservice:3550
+    CURRENCY_SERVICE_ADDR: boutique-currencyservice:7000
+    CART_SERVICE_ADDR: boutique-cartservice:7070
+    RECOMMENDATION_SERVICE_ADDR: boutique-recommendationservice:8080
+    SHIPPING_SERVICE_ADDR: boutique-shippingservice:50051
+    CHECKOUT_SERVICE_ADDR: boutique-checkoutservice:5050
+    AD_SERVICE_ADDR: boutique-adservice:9555
+    # Not deployed: the frontend panics at start when any of its eight addresses is empty (src/frontend/main.go:139).
+    SHOPPING_ASSISTANT_SERVICE_ADDR: boutique-shoppingassistantservice:80
+    ENABLE_PROFILER: "0"
+  resources:
+    requests: {cpu: 100m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  probes:
+    readiness:
+      initialDelaySeconds: 10
+      httpGet:
+        path: /_healthz
+        port: http
+        httpHeaders: [{name: Cookie, value: shop_session-id=x-readiness-probe}]
+    liveness:
+      initialDelaySeconds: 10
+      httpGet:
+        path: /_healthz
+        port: http
+        httpHeaders: [{name: Cookie, value: shop_session-id=x-liveness-probe}]
+  # Rendered, not served: no Gateway controller is installed (docs/adr/0005-frontend-exposed-by-service-and-httproute.md).
+  httpRoute:
+    enabled: true
+    parentRefs: [{name: boutique-gw, namespace: gateway, sectionName: http}]
+    hostnames: [boutique.example.test]
+  networkPolicy:
+    enabled: true
+    ingress:
+      fromComponents: [loadgenerator, smoke]
+      # The Gateway's proxy pods (Envoy Gateway's default mode runs them in its own namespace).
+      fromNamespaces: [envoy-gateway-system]
+    egress:
+      enabled: true
+      toComponents:
+        - productcatalogservice
+        - currencyservice
+        - cartservice
+        - recommendationservice
+        - shippingservice
+        - checkoutservice
+        - adservice
+  # Shared by every component through a YAML anchor: the other aliases write `commonLabels: *domain-labels`
+  # (docs/adr/0002-values-under-each-alias.md: measured under helm lint --strict with the root schema).
+  commonLabels: &domain-labels {domain: boutique}
+
+productcatalogservice:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/productcatalogservice
+    tag: v0.10.7
+    digest: sha256:ba573405e9b03ea29970185eeaf0a9de9db7400b9104695e39d4dfc0fb651cb5
+  ports: [{name: grpc, containerPort: 3550}]
+  config: {PORT: "3550", DISABLE_PROFILER: "1"}
+  resources:
+    requests: {cpu: 100m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  # A gRPC probe takes a port number only (docs/findings.md G2).
+  probes:
+    readiness: {grpc: {port: 3550}}
+    liveness: {grpc: {port: 3550}}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [frontend, checkoutservice, recommendationservice]}
+    egress: {enabled: true}
+  commonLabels: *domain-labels
+
+currencyservice:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/currencyservice
+    tag: v0.10.7
+    digest: sha256:c581681bbf9abec8563e520aac3f3dbe3e7498853b6eb263193bc80c87e42f74
+  ports: [{name: grpc, containerPort: 7000}]
+  config: {PORT: "7000", DISABLE_PROFILER: "1"}
+  resources:
+    requests: {cpu: 100m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  probes:
+    readiness: {grpc: {port: 7000}}
+    liveness: {grpc: {port: 7000}}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [frontend, checkoutservice]}
+    egress: {enabled: true}
+  commonLabels: *domain-labels
+
+cartservice:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice
+    tag: v0.10.7
+    digest: sha256:e5310c2aa45732e351c55c88051700d958dc7ed2693e66405fc6c70cf080109e
+  ports: [{name: grpc, containerPort: 7070}]
+  # REDIS_ADDR comes from the component's own ExternalSecret: the cart service hands it to StackExchange.Redis as a
+  # configuration string, so it carries the password (docs/adr/0007-smoke-job-and-redis-password-extensions.md).
+  # The store's password must contain no comma: StackExchange.Redis splits this string on commas. A rotation restarts
+  # redis-cart and cartservice together: both read the password at start.
+  externalSecret:
+    enabled: true
+    secretStoreRef: {kind: ClusterSecretStore, name: boutique}
+    data:
+      REDIS_PASSWORD: {key: /boutique/redis-password}
+    template:
+      mergePolicy: Replace
+      data:
+        REDIS_ADDR: "boutique-redis-cart:6379,password={{ .REDIS_PASSWORD }}"
+  resources:
+    requests: {cpu: 200m, memory: 64Mi}
+    limits: {cpu: 300m, memory: 128Mi}
+  probes:
+    readiness: {initialDelaySeconds: 15, grpc: {port: 7070}}
+    liveness: {initialDelaySeconds: 15, periodSeconds: 10, grpc: {port: 7070}}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [frontend, checkoutservice]}
+    egress: {enabled: true, toComponents: [redis-cart]}
+  commonLabels: *domain-labels
+
+recommendationservice:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/recommendationservice
+    tag: v0.10.7
+    digest: sha256:69291992f5511e9199d08c24a3ceb6470b39461933304fbdad1c7ddfc7358fd9
+  ports: [{name: grpc, containerPort: 8080}]
+  config:
+    PORT: "8080"
+    PRODUCT_CATALOG_SERVICE_ADDR: boutique-productcatalogservice:3550
+    DISABLE_PROFILER: "1"
+  resources:
+    requests: {cpu: 100m, memory: 220Mi}
+    limits: {cpu: 200m, memory: 450Mi}
+  probes:
+    readiness: {periodSeconds: 5, grpc: {port: 8080}}
+    liveness: {periodSeconds: 5, grpc: {port: 8080}}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [frontend]}
+    egress: {enabled: true, toComponents: [productcatalogservice]}
+  commonLabels: *domain-labels
+
+shippingservice:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice
+    tag: v0.10.7
+    digest: sha256:3984397422ef1b45bd8a7c6736f935f4b6a41a1724ea39f9563b26733ed633e4
+  ports: [{name: grpc, containerPort: 50051}]
+  config: {PORT: "50051", DISABLE_PROFILER: "1"}
+  resources:
+    requests: {cpu: 100m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  probes:
+    readiness: {periodSeconds: 5, grpc: {port: 50051}}
+    liveness: {grpc: {port: 50051}}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [frontend, checkoutservice]}
+    egress: {enabled: true}
+  commonLabels: *domain-labels
+
+checkoutservice:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/checkoutservice
+    tag: v0.10.7
+    digest: sha256:f0e72ff7b438dd2e8776fb142d5132cfa5ba02c523466f1491270c576412d33f
+  ports: [{name: grpc, containerPort: 5050}]
+  config:
+    PORT: "5050"
+    PRODUCT_CATALOG_SERVICE_ADDR: boutique-productcatalogservice:3550
+    SHIPPING_SERVICE_ADDR: boutique-shippingservice:50051
+    PAYMENT_SERVICE_ADDR: boutique-paymentservice:50051
+    EMAIL_SERVICE_ADDR: boutique-emailservice:5000
+    CURRENCY_SERVICE_ADDR: boutique-currencyservice:7000
+    CART_SERVICE_ADDR: boutique-cartservice:7070
+  resources:
+    requests: {cpu: 100m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  probes:
+    readiness: {grpc: {port: 5050}}
+    liveness: {grpc: {port: 5050}}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [frontend]}
+    egress:
+      enabled: true
+      toComponents:
+        - productcatalogservice
+        - shippingservice
+        - paymentservice
+        - emailservice
+        - currencyservice
+        - cartservice
+  commonLabels: *domain-labels
+
+paymentservice:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/paymentservice
+    tag: v0.10.7
+    digest: sha256:e1ff27c553f7e0c31f4a10f1950ec0ee34cd41d77dd819b1fcfa139273891602
+  ports: [{name: grpc, containerPort: 50051}]
+  config: {PORT: "50051", DISABLE_PROFILER: "1"}
+  resources:
+    requests: {cpu: 100m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  probes:
+    readiness: {grpc: {port: 50051}}
+    liveness: {grpc: {port: 50051}}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [checkoutservice]}
+    egress: {enabled: true}
+  commonLabels: *domain-labels
+
+emailservice:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/emailservice
+    tag: v0.10.7
+    digest: sha256:1142813191b50f7e74bd1d8957d3b272496e9648b745d2c9914752b94356eade
+  # Upstream's Service listens on 5000 and targets the container's 8080.
+  ports: [{name: grpc, containerPort: 8080, servicePort: 5000}]
+  config: {PORT: "8080", DISABLE_PROFILER: "1"}
+  resources:
+    requests: {cpu: 100m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  probes:
+    readiness: {periodSeconds: 5, grpc: {port: 8080}}
+    liveness: {periodSeconds: 5, grpc: {port: 8080}}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [checkoutservice]}
+    egress: {enabled: true}
+  commonLabels: *domain-labels
+
+adservice:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/adservice
+    tag: v0.10.7
+    digest: sha256:7b26b5ea1a6472ca62b3c20c6f6ac12dd1fbcf18ba596a2c174982bcccdfc0c8
+  ports: [{name: grpc, containerPort: 9555}]
+  config: {PORT: "9555"}
+  resources:
+    requests: {cpu: 200m, memory: 180Mi}
+    limits: {cpu: 300m, memory: 300Mi}
+  probes:
+    readiness: {initialDelaySeconds: 20, periodSeconds: 15, grpc: {port: 9555}}
+    liveness: {initialDelaySeconds: 20, periodSeconds: 15, grpc: {port: 9555}}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [frontend]}
+    egress: {enabled: true}
+  commonLabels: *domain-labels
+
+redis-cart:
+  enabled: true
+  image:
+    # Upstream floats `redis:alpine`. The digest wins: the build of Redis 8.10.3 that `alpine` named on 2026-11-03
+    # (its image config says REDIS_VERSION=8.10.3). Today `alpine` and `8.10.3-alpine` both name a later build. The
+    # tag only feeds the version label (docs/findings.md G8).
+    repository: docker.io/library/redis
+    tag: 8.10.3-alpine
+    digest: sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+  # The image's entrypoint runs `redis-server` for arguments that start with `-`. The kubelet expands
+  # $(REDIS_PASSWORD) from the container's environment (the `env` entry below).
+  args: ["--requirepass", "$(REDIS_PASSWORD)"]
+  ports: [{name: redis, containerPort: 6379}]
+  env:
+    REDIS_PASSWORD:
+      valueFrom:
+        externalSecretKeyRef: {key: REDIS_PASSWORD}
+  externalSecret:
+    enabled: true
+    secretStoreRef: {kind: ClusterSecretStore, name: boutique}
+    data:
+      REDIS_PASSWORD: {key: /boutique/redis-password}
+    # Read one key at a time (env above), not injected whole.
+    envFrom: false
+  resources:
+    requests: {cpu: 70m, memory: 200Mi}
+    limits: {cpu: 125m, memory: 256Mi}
+  probes:
+    readiness: {periodSeconds: 5, tcpSocket: {port: redis}}
+    liveness: {periodSeconds: 5, tcpSocket: {port: redis}}
+  # Ephemeral like upstream: a pod restart empties every cart.
+  volumes:
+    redis-data: {type: emptyDir, mountPath: /data}
+  strategy: {type: Recreate}
+  networkPolicy:
+    enabled: true
+    ingress: {fromComponents: [cartservice]}
+    egress: {enabled: true}
+  commonLabels: *domain-labels
+
+loadgenerator:
+  enabled: true
+  image:
+    repository: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/loadgenerator
+    tag: v0.10.7
+    digest: sha256:f86f07c0da48bc00e7843e060b6811b56b1ad8a184d3962f5e80e15f42370cc8
+  ports: []
+  service: {enabled: false}
+  config:
+    FRONTEND_ADDR: boutique-frontend:80
+    USERS: "10"
+    RATE: "1"
+  resources:
+    requests: {cpu: 300m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  initContainers:
+    # Upstream's frontend-check, its script verbatim: it waits until the home page answers 200.
+    frontend-check:
+      image:
+        repository: docker.io/library/busybox
+        tag: 1.38.0
+        digest: sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616
+      # FRONTEND_ADDR from the component's config: an entry's env takes references only (docs/findings.md G4).
+      inheritEnv: true
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 50m, memory: 32Mi}
+      command:
+        - /bin/sh
+        - -exc
+        - |
+          MAX_RETRIES=12
+          RETRY_INTERVAL=10
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i: Pinging frontend: ${FRONTEND_ADDR}..."
+            STATUSCODE=$(wget --server-response http://${FRONTEND_ADDR} 2>&1 | awk '/^  HTTP/{print $2}')
+            if [ $STATUSCODE -eq 200 ]; then
+                echo "Frontend is reachable."
+                exit 0
+            fi
+            echo "Error: Could not reach frontend - Status code: ${STATUSCODE}"
+            sleep $RETRY_INTERVAL
+          done
+          echo "Failed to reach frontend after $MAX_RETRIES attempts."
+          exit 1
+  networkPolicy:
+    enabled: true
+    egress: {enabled: true, toComponents: [frontend]}
+  commonLabels: *domain-labels
+
+# Not part of Online Boutique: a post-deploy hook that fails the release unless the home page and a product page answer
+# 200 with the product's name (docs/adr/0007-smoke-job-and-redis-password-extensions.md).
+smoke:
+  enabled: true
+  workload: {type: job}
+  image:
+    repository: registry.k8s.io/e2e-test-images/agnhost
+    tag: "2.66.1"
+    digest: sha256:6e2eef87d0dc77e070a7549bc5fdfa290c0fefe3359eb33c2ad1eda692fe66a4
+  command:
+    - /bin/sh
+    - -c
+    - |
+      # fetch <path> <text>: the page must answer 200 and contain <text>. The retries cover the time the CNI takes to
+      # program this Job's own NetworkPolicy, a hook created just before it.
+      fetch() {
+        path="$1" text="$2" i=0
+        while :; do
+          code="$(curl -sS --max-time 5 -o /tmp/page.html -w '%{http_code}' "http://${FRONTEND_ADDR}${path}")" || code="curl-error"
+          if [ "$code" = 200 ] && grep -qF "$text" /tmp/page.html; then
+            echo "ok: GET ${path} answered 200 with '${text}'"
+            return 0
+          fi
+          i=$((i + 1))
+          if [ "$i" -ge 6 ]; then
+            echo "FAIL: GET ${path} answered '${code}', expected 200 with '${text}'; the body begins:" >&2
+            head -c 400 /tmp/page.html >&2 || true
+            return 1
+          fi
+          sleep 5
+        done
+      }
+      fetch / "<div class=\"hot-product-card-name\">${SMOKE_PRODUCT_NAME}</div>" &&
+        fetch "/product/${SMOKE_PRODUCT_ID}" "<h2>${SMOKE_PRODUCT_NAME}</h2>" &&
+        echo smoke-ok
+  ports: []
+  config:
+    FRONTEND_ADDR: boutique-frontend:80
+    # A product of the catalog (src/productcatalogservice/products.json at v0.10.7).
+    SMOKE_PRODUCT_ID: OLJCESPC7Z
+    SMOKE_PRODUCT_NAME: Sunglasses
+  resources:
+    requests: {cpu: 10m, memory: 16Mi}
+    limits: {cpu: 100m, memory: 64Mi}
+  # Two pages, six tries each, at most 10 s a try: 120 s, within the deadline.
+  job: {phase: post-deploy, backoffLimit: 0, activeDeadlineSeconds: 180}
+  networkPolicy:
+    enabled: true
+    egress: {enabled: true, toComponents: [frontend]}
+  commonLabels: *domain-labels

@@ -1,0 +1,14 @@
+# VCS and CI
+.git/
+.gitignore
+.github/
+# CI values, docs and the helmfile (not part of the chart)
+ci/
+docs/
+helmfile.yaml
+# Editor files
+*.swp
+*.bak
+*.tmp
+.idea/
+.vscode/

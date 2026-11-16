@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Versions follow chart-base's CI (its .github/workflows/ci.yaml at 0.11.0), bumped by hand: no Renovate here.
+env:
+  HELM_VERSION: v4.3.0
+  HELMFILE_VERSION: v1.8.2
+  KUBECONFORM_VERSION: v0.8.0
+  ACTIONLINT_VERSION: v1.7.12
+  LYCHEE_VERSION: v0.24.2
+  GATEWAY_API_VERSION: v1.6.2
+  # The sha256 of that release's standard-install.yaml, which e2e.sh checks before applying it. Bump it with the version.
+  GATEWAY_API_SHA256: faede450fa178126aba41337737b97d351ebe87d93c910237ce1e072d1ca40d9
+  ESO_CHART_VERSION: 2.11.0
+
+jobs:
+  static:
+    name: static checks (helm ${{ matrix.helm }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep the 4.x entry equal to HELM_VERSION.
+        helm: [v3.22.0, v4.3.0]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ matrix.helm }}
+      - name: Install kubeconform
+        run: |
+          cd "$RUNNER_TEMP"
+          base="https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}"
+          curl -fsSLO "${base}/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLO "${base}/CHECKSUMS"
+          grep ' kubeconform-linux-amd64.tar.gz$' CHECKSUMS | sha256sum -c -
+          tar -xzf kubeconform-linux-amd64.tar.gz kubeconform
+          sudo install kubeconform /usr/local/bin/kubeconform
+      - name: helm dependency build (chart-base from Chart.lock, anonymous GHCR)
+        run: helm dependency build .
+      - name: One chart-base version for every alias
+        run: yq -e '[.dependencies[]|select(.name=="chart-base")|.version]|unique|length==1' Chart.yaml
+      - name: helm lint --strict (every component enabled, root schema)
+        run: helm lint --strict . -f ci/all-enabled.yaml
+      - name: helm template boutique . (dependencies, every rendered name, every sibling address)
+        run: .github/scripts/check-umbrella.sh .
+      - name: kubeconform on Kubernetes 1.33
+        run: .github/scripts/validate-manifests.sh . 1.33.12
+      - name: kubeconform on Kubernetes 1.37
+        run: .github/scripts/validate-manifests.sh . 1.37.0
+
+  e2e:
+    name: e2e on kind (kubernetes ${{ matrix.kubernetes }})
+    runs-on: ubuntu-24.04
+    # helmfile's Helm timeout is 600 s per phase (the rollout wait, then the smoke hook): 20 minutes at worst, plus the
+    # platform (External Secrets: 5 minutes at most) and the checks. More than twice the Helm timeout, so a hung leg
+    # cannot hold the run.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Online Boutique images are linux/amd64 only: amd64 runners. kind node images must match their kind
+        # release and are pinned by digest, as in chart-base's CI.
+        include:
+          - kubernetes: "1.33"
+            kind: v0.32.0
+            node_image: kindest/node:v1.33.12@sha256:3f5c8443c620245e4d355cfe09e96a91ead32ceaa569d3f1ca9edf0cb2fe2ff4
+          - kubernetes: "1.37"
+            kind: v0.33.0
+            node_image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install helmfile
+        run: |
+          cd "$RUNNER_TEMP"
+          version="${HELMFILE_VERSION#v}"
+          base="https://github.com/helmfile/helmfile/releases/download/${HELMFILE_VERSION}"
+          curl -fsSLO "${base}/helmfile_${version}_linux_amd64.tar.gz"
+          curl -fsSLO "${base}/helmfile_${version}_checksums.txt"
+          grep " helmfile_${version}_linux_amd64.tar.gz\$" "helmfile_${version}_checksums.txt" | sha256sum -c -
+          tar -xzf "helmfile_${version}_linux_amd64.tar.gz" helmfile
+          sudo install helmfile /usr/local/bin/helmfile
+      - uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          version: ${{ matrix.kind }}
+          node_image: ${{ matrix.node_image }}
+          cluster_name: boutique
+      - name: helmfile -e ci sync, then every check (Deployments, smoke hook, pages, cart, ExternalSecrets, NetworkPolicy)
+        run: .github/scripts/e2e.sh .
+
+  repo-lint:
+    name: workflow, scripts and docs (actionlint, shellcheck, zizmor, lychee)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: actionlint
+        run: |
+          cd "$RUNNER_TEMP"
+          version="${ACTIONLINT_VERSION#v}"
+          base="https://github.com/rhysd/actionlint/releases/download/${ACTIONLINT_VERSION}"
+          curl -fsSLO "${base}/actionlint_${version}_linux_amd64.tar.gz"
+          curl -fsSLO "${base}/actionlint_${version}_checksums.txt"
+          grep " actionlint_${version}_linux_amd64.tar.gz\$" "actionlint_${version}_checksums.txt" | sha256sum -c -
+          tar -xzf "actionlint_${version}_linux_amd64.tar.gz" actionlint
+          cd "$GITHUB_WORKSPACE" && "$RUNNER_TEMP/actionlint" -color
+      - name: shellcheck (the runner's)
+        run: shellcheck .github/scripts/*.sh
+      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          advanced-security: false
+          # The version run 43970184540 resolved from `latest`. At this action SHA both map to the same image digest
+          # (its support/versions); the pin keeps the version visible and bumped deliberately, with the action.
+          version: 1.30.1
+      - name: Install lychee
+        run: |
+          cd "$RUNNER_TEMP"
+          asset=lychee-x86_64-unknown-linux-gnu.tar.gz
+          base="https://github.com/lycheeverse/lychee/releases/download/lychee-${LYCHEE_VERSION}"
+          curl -fsSLO "${base}/${asset}"
+          curl -fsSLO "${base}/${asset}.sha256"
+          sha256sum -c "${asset}.sha256"
+          tar -xzf "$asset" --strip-components=1 lychee-x86_64-unknown-linux-gnu/lychee
+          sudo install lychee /usr/local/bin/lychee
+      - name: Every Markdown link and anchor resolves (offline)
+        run: lychee --offline --include-fragments --no-progress './**/*.md'
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [static, e2e, repo-lint]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Every required job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            [ "$result" = success ] || { echo "::error::a required job ended with: $result"; exit 1; }
+          done
