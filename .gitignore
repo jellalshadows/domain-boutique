@@ -1,0 +1,2 @@
+# Chart dependencies that `helm dependency build` downloads from Chart.lock (the lock is committed)
+charts/*.tgz
