@@ -289,9 +289,11 @@ adservice:
 redis-cart:
   enabled: true
   image:
-    # Upstream floats `redis:alpine`; this digest is Redis 8.10.3 (the tag has moved since: docs/findings.md).
+    # Upstream floats `redis:alpine`. The digest wins: the build of Redis 8.10.3 that `alpine` named on 2026-11-03
+    # (its image config says REDIS_VERSION=8.10.3). Today `alpine` and `8.10.3-alpine` both name a later build. The
+    # tag only feeds the version label (docs/findings.md G8).
     repository: docker.io/library/redis
-    tag: alpine
+    tag: 8.10.3-alpine
     digest: sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
   # The image's entrypoint runs `redis-server` for arguments that start with `-`. The kubelet expands
   # $(REDIS_PASSWORD) from the container's environment (the `env` entry below).
