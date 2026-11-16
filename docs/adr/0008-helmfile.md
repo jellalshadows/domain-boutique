@@ -18,9 +18,10 @@
 - **Never roll back.** On Helm 4, helmfile turns `atomic` into `--rollback-on-failure`. On a first install that
   uninstalls the whole domain, and the failing pods and their events with it.
 - **Per-phase bounds.** Helm's `--timeout` applies per operation: first the wait for every Deployment, then the
-  post-deploy Job's wait. Each phase also ends earlier on its own bound: `progressDeadlineSeconds` (240) for a
-  Deployment, `activeDeadlineSeconds` (180) for the smoke Job. The e2e job allows 45 minutes, more than twice the
-  worst case of 2 x 600 s.
+  post-deploy Job's wait. The smoke Job's phase also ends earlier, at its `activeDeadlineSeconds` (180). The rollout
+  phase ends earlier only on Helm 4.3: its status watcher stops at a Deployment that exceeds its
+  `progressDeadlineSeconds` (240), while Helm 3's legacy wait keeps waiting until `--timeout` (chart-base's consuming
+  guide). The e2e job allows 45 minutes, more than twice the worst case of 2 x 600 s.
 
 ## Consequences
 

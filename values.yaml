@@ -10,8 +10,8 @@
 # `boutique`); rendering under another release name succeeds and breaks every call between components at runtime
 # (docs/adr/0003-release-name-pinned-by-helmfile.md, docs/findings.md G1).
 #
-# Images are pinned by digest (resolved 2026-11-03; a tag can be re-pushed, a digest cannot). The tag stays for the
-# chart's version label. The Online Boutique images are linux/amd64 only.
+# Images are pinned by digest (resolved 2026-11-03, the smoke Job's agnhost on 2026-11-16; a tag can be re-pushed, a
+# digest cannot). The tag stays for the chart's version label. The Online Boutique images are linux/amd64 only.
 
 frontend:
   enabled: true
@@ -126,6 +126,8 @@ cartservice:
   ports: [{name: grpc, containerPort: 7070}]
   # REDIS_ADDR comes from the component's own ExternalSecret: the cart service hands it to StackExchange.Redis as a
   # configuration string, so it carries the password (docs/adr/0007-smoke-job-and-redis-password-extensions.md).
+  # The store's password must contain no comma: StackExchange.Redis splits this string on commas. A rotation restarts
+  # redis-cart and cartservice together: both read the password at start.
   externalSecret:
     enabled: true
     secretStoreRef: {kind: ClusterSecretStore, name: boutique}

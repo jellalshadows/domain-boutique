@@ -12,9 +12,10 @@ environments:
 helmDefaults:
   # Helm waits until every Deployment is Available before it runs the post-deploy hook (the smoke Job).
   wait: true
-  # Seconds per Kubernetes operation, so per phase: the rollout wait, then the hook Job's wait. Each phase also ends
-  # earlier on its own bound: a Deployment that makes no progress at its progressDeadlineSeconds (240, chart-base's
-  # default), the smoke Job at its activeDeadlineSeconds (180). CI gives its job more than twice this (e2e workflow).
+  # Seconds per Kubernetes operation, so per phase: the rollout wait, then the hook Job's wait. The smoke Job's phase
+  # also ends earlier, at its activeDeadlineSeconds (180). The rollout phase ends earlier only on Helm 4.3, whose status
+  # watcher stops at a Deployment past its progressDeadlineSeconds (240, chart-base's default); Helm 3's legacy wait
+  # keeps waiting until this timeout. CI gives its job more than twice this (e2e workflow).
   timeout: 600
   # Never roll back. On Helm 4 helmfile turns atomic into --rollback-on-failure, and on a first install that uninstalls
   # the whole domain, the failing pods and their events with it.

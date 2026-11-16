@@ -42,6 +42,11 @@ hand-written `secretKeyRef` to `boutique-redis-cart-secrets` from cartservice wo
 - The release fails unless the frontend serves both pages, which needs currency, productcatalog and cart, which needs
   Redis with the password.
 - The cluster must provide a ClusterSecretStore named `boutique`: the fake provider in CI, a real one elsewhere.
+- The stored password must contain no comma. StackExchange.Redis splits `REDIS_ADDR` on commas, so with `abc,def`
+  cartservice would send the password `abc` and read `def` as a second endpoint, while redis-server requires
+  `abc,def`. Every cart call would fail, then the home page (it reads the cart) and the smoke hook, far from the cause.
+- Rotating the password needs redis-cart and cartservice restarted together. Each reads it from its environment at
+  start, so restarting only one of them breaks the cart.
 - The password reaches redis-server's process arguments, readable by whoever can exec into the container. The pod spec
   holds only `$(REDIS_PASSWORD)`, and the Secret holds the value.
 
@@ -50,5 +55,8 @@ hand-written `secretKeyRef` to `boutique-redis-cart-secrets` from cartservice wo
 - Both ExternalSecrets render as `external-secrets.io/v1` and validate with kubeconform and on both API servers.
 - The e2e's Secret checks were run on objects of the same shape on both API servers: the key set `REDIS_ADDR ` and the
   decoded value.
-- At runtime, only kind proves it: Redis answers `NOAUTH Authentication required.` without the password and `PONG`
-  with it, and an item added through the frontend is in Redis under the session's key.
+- At runtime, PR CI run [43970184540](https://github.com/jellalshadows/domain-boutique/actions/runs/43970184540)
+  proved it on kind with Kubernetes 1.33.12 and 1.37.0: both ExternalSecrets were Ready, the checks that Redis answers
+  `NOAUTH Authentication required.` without the password and `PONG` with it passed, and an item added through the
+  frontend was in Redis under the session's key (`EXISTS` 1). The smoke hook succeeded on both legs
+  ([findings](../findings.md#the-first-kind-run)).

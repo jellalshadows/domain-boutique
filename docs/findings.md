@@ -9,7 +9,7 @@ changed from this repository.
 | ID | Gap | Class | Severity | Where the umbrella works around it |
 |---|---|---|---|---|
 | [G1](#g1-sibling-addresses-hard-code-the-release-name) | Sibling addresses hard-code the release name, in `config` and in an ExternalSecret template | docs | medium | helmfile pins the release name; CI checks every address |
-| [G2](#g2-a-main-container-probe-port-is-not-checked) | A main-container probe takes a port name where Kubernetes needs a number | chart (breaking to fix) | medium | ten gRPC probes by number |
+| [G2](#g2-a-main-container-probe-port-is-not-checked) | A main-container probe takes a port name where Kubernetes needs a number | chart (breaking to fix) | medium | 18 gRPC probes (readiness and liveness) on the nine gRPC services, by number |
 | [G3](#g3-no-umbrella-wide-defaults) | No umbrella-wide defaults | consumer workaround | low | a YAML anchor |
 | [G4](#g4-an-init-container-has-no-literal-env) | An init container has no literal `env` | consumer workaround | low | `config` plus `inheritEnv: true` |
 | [G5](#g5-online-boutique-exercises-the-deployment-path-only) | Online Boutique exercises the Deployment path only | scope of criterion 2 | medium | the smoke Job and the Redis password |
@@ -27,6 +27,9 @@ Severity reads as chart-base's: **medium** should be settled before the 1.0 cont
   `sha256:3fac6ea218c81758d58d5441497336f7547d68bede2e3e3642f6d03058a18bea`).
 - chart-base file references are at its `main` = `50c4f1c`.
 - The feasibility research (2026-11-03) found G1 to G6. Its probe renders are cited where this run did not repeat them.
+- At runtime, on kind: PR CI run
+  [43970184540](https://github.com/jellalshadows/domain-boutique/actions/runs/43970184540), on Kubernetes 1.33.12 and
+  1.37.0 ([the first kind run](#the-first-kind-run)).
 
 ## G1: sibling addresses hard-code the release name
 
@@ -69,7 +72,8 @@ A chart feature, such as a placeholder resolved in `config`, would break "values
 
 **What happens.** The main container's probes are open Kubernetes objects. A gRPC probe whose port is a name renders,
 and passes `helm lint --strict`. kubeconform rejects it, and so does the API server at install time. A gRPC domain
-writes ten such probes (`values.yaml`: every service except frontend and redis-cart).
+writes many such probes: here 18, readiness and liveness on each of the nine gRPC services (`values.yaml`: every
+Deployment except frontend, redis-cart and loadgenerator).
 
 ```console
 $ helm template boutique . -f ci/all-enabled.yaml -f g2.yaml   # g2.yaml: adservice readiness grpc: {port: grpc}
@@ -167,8 +171,9 @@ unresolved name is left as written, and `$$` is an escape.
 
 **Evidence.** The rendered container: `args: [--requirepass, $(REDIS_PASSWORD)]` with
 `env[REDIS_PASSWORD].valueFrom.secretKeyRef.name: boutique-redis-cart-secrets`. The API servers accept it (server dry
-run, both versions). The expansion itself is Kubernetes' documented behavior and is proven at runtime only by the kind
-e2e: Redis must answer `NOAUTH` without the password and `PONG` with it.
+run, both versions). The expansion itself is Kubernetes' documented behavior. The kind e2e proved it at runtime on both
+legs of run [43970184540](https://github.com/jellalshadows/domain-boutique/actions/runs/43970184540): its check that
+Redis answers `NOAUTH Authentication required.` without the password and `PONG` with it passed.
 
 **Candidate fix (docs).** A README recipe, "a secret as a command-line flag", next to `externalSecretKeyRef`.
 
@@ -186,13 +191,47 @@ The tag also moved after the digest was taken. On 2026-11-03 `alpine` named the 
 **Candidate fix (docs).** The README's image section: with a digest, keep the tag the version you pinned, because only
 the label reads it.
 
+## The first kind run
+
+PR CI run [43970184540](https://github.com/jellalshadows/domain-boutique/actions/runs/43970184540), on 2026-11-16, ran
+the e2e on kind v0.32.0 (Kubernetes 1.33.12, containerd 2.3.1) and kind v0.33.0 (Kubernetes 1.37.0, containerd
+2.3.4). Both legs passed every check, and they settle what the design left to the first kind run.
+
+| What | Kubernetes 1.33.12 | Kubernetes 1.37.0 |
+|---|---|---|
+| `helmfile -e ci sync`: every Deployment available, then the smoke hook | 68 s | 59 s |
+| The 12 Deployment pods and the smoke pod: UID, seccomp, restarts | all 65532, `RuntimeDefault`, 0 | all 65532, `RuntimeDefault`, 0 |
+| NetworkPolicy, from `outsider` to redis-cart and to the frontend | denied: TIMEOUT | denied: TIMEOUT |
+| NetworkPolicy, from `envoy-gateway-system` to the frontend | allowed | allowed |
+| Redis `PING` without the password, then with it | `NOAUTH Authentication required.`, then `PONG` | the same |
+| The cart added through the frontend, read from Redis | `EXISTS` 1 | `EXISTS` 1 |
+| `redis` and `busybox`, anonymous pulls from Docker Hub | pulled | pulled |
+
+The log prints the sync times, the kind and node versions and the pod table. The other rows are what the passing checks
+compare against in `e2e.sh`: `probe` counts a deny only when agnhost reports TIMEOUT, a dropped connection, and the
+Redis checks compare the exact replies.
+
+- **UID (design decision 4, "Record which").** No alias needs the UID 1000 fallback: every image runs as chart-base's
+  65532 with `RuntimeDefault`, on both versions.
+- **Startup.** The whole sync took 68 s and 59 s, so every Deployment became available well inside its 240 s progress
+  deadline.
+- **NetworkPolicy.** kindnet enforced the policies on both versions. The checks inside the namespace (a pod that no
+  policy admits, and the egress of a pod that loadgenerator's policy selects) and the order through the frontend were
+  added after this run; CI proves them from the next run on.
+- **The Redis password.** The kubelet expanded `$(REDIS_PASSWORD)` (G7), and cartservice's templated `REDIS_ADDR`
+  carried the same password: the cart round trip passed.
+- **Docker Hub.** Both images pulled anonymously on both legs: redis-cart and the loadgenerator, whose init container
+  is busybox, ran with 0 restarts.
+
 ## Observations outside chart-base
 
-These are recorded for the first kind run and for whoever maintains this umbrella, not as chart-base gaps.
+These are recorded for whoever maintains this umbrella, not as chart-base gaps.
 
 - **amd64 only.** Every Online Boutique image is a single-architecture `linux/amd64` manifest (research §1). CI runs on
   amd64 runners only.
-- **Docker Hub.** `redis` and `busybox` come from Docker Hub. Its anonymous pull limits on shared runner IPs are
-  unverified. Both are pinned by digest, and both digests are older than their tags today (research §1, and G8 here).
+- **Docker Hub.** `redis` and `busybox` come from Docker Hub. Both pulled anonymously in
+  [the first kind run](#the-first-kind-run); one run does not bound the limit on shared runner IPs, and a refused pull
+  shows as `ImagePullBackOff` in the e2e's dump. Both are pinned by digest, and both digests are older than their tags
+  today (research §1, and G8 here).
 - **helmfile 1.x.** It refuses `environments` and `releases` in one YAML part (`environments and releases cannot be
   defined within the same YAML part`): `helmfile.yaml` separates them with `---`.
