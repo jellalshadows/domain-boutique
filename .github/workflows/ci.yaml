@@ -17,6 +17,8 @@ env:
   ACTIONLINT_VERSION: v1.7.12
   LYCHEE_VERSION: v0.24.2
   GATEWAY_API_VERSION: v1.6.2
+  # The sha256 of that release's standard-install.yaml, which e2e.sh checks before applying it. Bump it with the version.
+  GATEWAY_API_SHA256: faede450fa178126aba41337737b97d351ebe87d93c910237ce1e072d1ca40d9
   ESO_CHART_VERSION: 2.11.0
 
 jobs:
@@ -131,6 +133,9 @@ jobs:
       - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
           advanced-security: false
+          # The version run 43970184540 resolved from `latest`. At this action SHA both map to the same image digest
+          # (its support/versions); the pin keeps the version visible and bumped deliberately, with the action.
+          version: 1.30.1
       - name: Install lychee
         run: |
           cd "$RUNNER_TEMP"

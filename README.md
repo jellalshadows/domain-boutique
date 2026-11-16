@@ -9,13 +9,19 @@ helmfile. What the umbrella revealed about chart-base is in [docs/findings.md](d
 
 ## Quick path: run it on kind
 
-You need an amd64 machine (the Online Boutique images are `linux/amd64` only), kind, kubectl, Helm 4.3.0 (or 3.22.0)
-and helmfile 1.8.2 or later.
+You need an amd64 machine (the Online Boutique images are `linux/amd64` only), kind, kubectl, curl, Helm 4.3.0 (or
+3.22.0) and helmfile 1.8.2 or later. CI uses kind v0.32.0 (Kubernetes 1.33.12) and v0.33.0 (1.37.0), whose kindnet
+enforces NetworkPolicy. Run it on a fresh kind cluster:
 
 ```console
 kind create cluster --name boutique
-GATEWAY_API_VERSION=v1.6.2 ESO_CHART_VERSION=2.11.0 .github/scripts/e2e.sh .
+GATEWAY_API_VERSION=v1.6.2 GATEWAY_API_SHA256=faede450fa178126aba41337737b97d351ebe87d93c910237ce1e072d1ca40d9 \
+  ESO_CHART_VERSION=2.11.0 .github/scripts/e2e.sh .
 ```
+
+`e2e.sh` refuses a kube context whose name does not start with `kind-`, because it installs an operator, creates
+namespaces and overwrites the ClusterSecretStore `boutique`. `E2E_ALLOW_ANY_CONTEXT=1` runs it on the current context
+anyway. Its setup steps can run again on the same cluster.
 
 [`e2e.sh`](.github/scripts/e2e.sh) is what CI runs, in three steps:
 
@@ -84,15 +90,24 @@ Every component has a NetworkPolicy matching this table, plus DNS egress.
 - **e2e on kind** 1.33 and 1.37, node images pinned by digest. [`e2e.sh`](.github/scripts/e2e.sh) checks:
   - every Deployment available, and the smoke hook succeeded;
   - the home page and a product page through the frontend's Service;
-  - an item added to the cart, read back from Redis;
+  - an item added to the cart, read back from Redis, then an order placed through the frontend;
   - both ExternalSecrets Ready, and Redis refusing a client without the password;
-  - a pod of another namespace denied by NetworkPolicy.
+  - NetworkPolicy denials: a pod of another namespace, a pod of `boutique` that no policy admits, and the egress of a
+    pod that loadgenerator's policy selects.
 
-  On a failure it dumps events, pods and logs.
+  On any failure it dumps events, pods and logs.
 - **Repository lint:** actionlint, shellcheck, zizmor, and an offline Markdown link check.
 
-To update a pinned version, edit the `env` block of the workflow, `Chart.yaml` and `Chart.lock` (with
-`helm dependency update`), or an image digest in `values.yaml`. Then run the static checks locally:
+To update a pinned version, edit:
+
+- the workflow: its `env` block (with `GATEWAY_API_SHA256` next to `GATEWAY_API_VERSION`), the Helm 3 entry of the
+  static matrix, the kind matrix (kind versions and node image digests), and zizmor's `version:`;
+- `Chart.yaml` and `Chart.lock` (with `helm dependency update`);
+- an image digest in `values.yaml`. The agnhost digest is in two places: the smoke Job in `values.yaml`, and
+  `e2e.sh`;
+- the schema commits in [`validate-manifests.sh`](.github/scripts/validate-manifests.sh).
+
+Then run the static checks locally. Besides Helm, they need `yq` (mikefarah v4) and kubeconform 0.8.0:
 
 ```console
 helm dependency build . && helm lint --strict . -f ci/all-enabled.yaml
