@@ -1,0 +1,32 @@
+# The boutique domain: one release of the umbrella chart in this directory (docs/adr/0008-helmfile.md).
+# Deploy: helmfile -e ci sync    (helmfile 1.8.2 or later; .github/scripts/e2e.sh prepares a kind cluster first)
+#
+# One environment, ci. It changes no value: the umbrella's values.yaml is the domain's configuration, and the platform
+# it expects (a ClusterSecretStore named boutique, the Gateway API CRDs, a CNI that enforces NetworkPolicy) is
+# provided by the cluster. A second environment would add its own values file here.
+environments:
+  ci: {}
+
+# helmfile 1.x reads the environments in a part of their own.
+---
+helmDefaults:
+  # Helm waits until every Deployment is Available before it runs the post-deploy hook (the smoke Job).
+  wait: true
+  # Seconds per Kubernetes operation, so per phase: the rollout wait, then the hook Job's wait. Each phase also ends
+  # earlier on its own bound: a Deployment that makes no progress at its progressDeadlineSeconds (240, chart-base's
+  # default), the smoke Job at its activeDeadlineSeconds (180). CI gives its job more than twice this (e2e workflow).
+  timeout: 600
+  # Never roll back. On Helm 4 helmfile turns atomic into --rollback-on-failure, and on a first install that uninstalls
+  # the whole domain, the failing pods and their events with it.
+  atomic: false
+  createNamespace: true
+
+releases:
+  # The release name is part of the values: every component reaches a sibling at boutique-<alias>:<port>
+  # (docs/findings.md G1). Do not rename it.
+  - name: boutique
+    namespace: boutique
+    chart: .
+    # The chart-base dependencies come from Chart.lock (helm dependency build). GHCR serves chart-base anonymously:
+    # no repositories entry, no registry login.
+    skipRefresh: true
