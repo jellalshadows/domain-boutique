@@ -1,0 +1,76 @@
+apiVersion: v2
+name: boutique
+description: >-
+  Online Boutique (GoogleCloudPlatform/microservices-demo v0.10.7) as a domain umbrella of chart-base: one alias per
+  workload, plus a post-deploy smoke Job. Validated in CI and deployed with helmfile; never published.
+type: application
+version: 0.1.0
+appVersion: "v0.10.7"
+# Every alias uses the same chart-base version and repository URL (Helm's named templates are global across an
+# umbrella's subcharts). CI checks it: docs/adr/0001-one-chart-base-dependency-per-component.md.
+dependencies:
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: frontend
+    condition: frontend.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: productcatalogservice
+    condition: productcatalogservice.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: currencyservice
+    condition: currencyservice.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: cartservice
+    condition: cartservice.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: recommendationservice
+    condition: recommendationservice.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: shippingservice
+    condition: shippingservice.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: checkoutservice
+    condition: checkoutservice.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: paymentservice
+    condition: paymentservice.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: emailservice
+    condition: emailservice.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: adservice
+    condition: adservice.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: redis-cart
+    condition: redis-cart.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: loadgenerator
+    condition: loadgenerator.enabled
+  - name: chart-base
+    version: 0.11.0
+    repository: oci://ghcr.io/jellalshadows/charts
+    alias: smoke
+    condition: smoke.enabled

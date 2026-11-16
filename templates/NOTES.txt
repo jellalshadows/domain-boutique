@@ -1,0 +1,9 @@
+Online Boutique {{ .Chart.AppVersion }} is deployed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+{{- if ne .Release.Name "boutique" }}
+
+WARNING: the components address each other as boutique-<alias> (values.yaml). Under the release name
+{{ .Release.Name }} every call between components fails: deploy with helmfile, which pins the release name boutique.
+{{- end }}
+
+The frontend's Service is {{ .Release.Name }}-frontend, port 80. Without a Gateway controller, reach it with:
+  kubectl port-forward -n {{ .Release.Namespace }} service/{{ .Release.Name }}-frontend 8080:80

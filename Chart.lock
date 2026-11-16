@@ -1,0 +1,42 @@
+dependencies:
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+- name: chart-base
+  repository: oci://ghcr.io/jellalshadows/charts
+  version: 0.11.0
+digest: sha256:ec699844f401399656f3c910730437909ddbd703fd8766a83c77f80b0d415b1a
+generated: "2026-11-16T22:58:43.6026352+01:00"

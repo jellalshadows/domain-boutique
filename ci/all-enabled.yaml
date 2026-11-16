@@ -1,0 +1,16 @@
+# Every component on, for helm lint --strict and the static render: a disabled component is removed before chart-base
+# validates its values, so an invalid key under it would pass unseen (chart-base docs/guides/consuming.md,
+# "Render once with every component enabled").
+frontend: {enabled: true}
+productcatalogservice: {enabled: true}
+currencyservice: {enabled: true}
+cartservice: {enabled: true}
+recommendationservice: {enabled: true}
+shippingservice: {enabled: true}
+checkoutservice: {enabled: true}
+paymentservice: {enabled: true}
+emailservice: {enabled: true}
+adservice: {enabled: true}
+redis-cart: {enabled: true}
+loadgenerator: {enabled: true}
+smoke: {enabled: true}
