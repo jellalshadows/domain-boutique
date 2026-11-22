@@ -337,7 +337,7 @@ loadgenerator:
   ports: []
   service: {enabled: false}
   config:
-    FRONTEND_ADDR: boutique-frontend:80
+    FRONTEND_ADDR: &frontend-addr boutique-frontend:80
     USERS: "10"
     RATE: "1"
   resources:
@@ -350,8 +350,10 @@ loadgenerator:
         repository: docker.io/library/busybox
         tag: 1.38.0
         digest: sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616
-      # FRONTEND_ADDR from the component's config: an entry's env takes references only (docs/findings.md G4).
-      inheritEnv: true
+      # FRONTEND_ADDR as a literal of its own, the main container's value through the anchor: an entry's config
+      # (chart-base 1.2.0, which closed docs/findings.md G4). The script reads nothing else of the main container.
+      config:
+        FRONTEND_ADDR: *frontend-addr
       resources:
         requests: {cpu: 10m, memory: 16Mi}
         limits: {cpu: 50m, memory: 32Mi}

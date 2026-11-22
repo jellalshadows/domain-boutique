@@ -19,7 +19,9 @@
 - `redis-cart` is a Deployment with an `emptyDir` at `/data` and `strategy: Recreate`. It is ephemeral, like upstream:
   a restart empties every cart.
 - `loadgenerator` has no Service. Its init container `frontend-check` runs upstream's script verbatim and gets
-  `FRONTEND_ADDR` through `inheritEnv: true`.
+  `FRONTEND_ADDR` as a literal of its own: an entry's `config` (chart-base 1.2.0), the main container's value
+  through a YAML anchor. Up to chart-base 0.11.0 an entry's `env` took references only, so it used `inheritEnv: true`
+  (docs/findings.md G4).
 - Images are pinned by digest.
 - The fallback for an image that cannot run as UID 65532 is `podSecurityContext: {runAsUser: 1000, runAsGroup: 1000,
   fsGroup: 1000}` under that alias. Which aliases use it (decision 4, "Record which"): none, since every image ran as
