@@ -9,7 +9,7 @@ concurrency:
   group: ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-# Versions follow chart-base's CI (its .github/workflows/ci.yaml at 0.11.0), bumped by hand: no Renovate here.
+# Versions follow chart-base's CI (its .github/workflows/ci.yaml at 1.6.1), bumped by hand: no Renovate here.
 env:
   HELM_VERSION: v4.3.0
   HELMFILE_VERSION: v1.8.2
