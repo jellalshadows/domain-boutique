@@ -1,8 +1,9 @@
 # chart-base gaps found by the boutique umbrella
 
-This umbrella is the first real domain built on chart-base 0.11.0, and it validates chart-base's 1.0 criterion 2.
+This umbrella is the first real domain built on chart-base 0.11.0, and it validated chart-base's 1.0 criterion 2.
 Every gap it revealed is listed here with its evidence, for chart-base's 1.0 preparation. chart-base itself is not
-changed from this repository.
+changed from this repository. This page is the record at 0.11.0; [Status at chart-base 1.6.1](#status-at-chart-base-161)
+says where each gap stands now that the umbrella runs on 1.6.1.
 
 ## Summary
 
@@ -18,6 +19,26 @@ changed from this repository.
 | [G8](#g8-the-version-label-comes-from-the-tag-even-when-a-digest-pins-the-image) | The version label comes from the tag even when a digest pins the image | observation | low | a versioned tag next to the digest |
 
 Severity reads as chart-base's: **medium** should be settled before the 1.0 contract freeze, **low** can follow it.
+
+## Status at chart-base 1.6.1
+
+The umbrella moved from chart-base 0.11.0 to 1.6.1 on 2026-11-23. Links point at chart-base's tag `v1.6.1`.
+
+| ID | In chart-base | In this umbrella |
+|---|---|---|
+| G1 | Documented in 0.12.0: [Calling a sibling component](https://github.com/jellalshadows/chart-base/blob/v1.6.1/README.md#calling-a-sibling-component) | Unchanged. helmfile pins the release name and CI checks every address. The recipe's `$(RELEASE)` form works only in `command` and `args`, and these addresses come through `config` |
+| G2 | Fixed in 0.12.0: a gRPC probe port must be a number ([ADR-0059](https://github.com/jellalshadows/chart-base/blob/v1.6.1/docs/adr/0059-one-probe-contract-for-every-container.md)) | The probes already gave numbers |
+| G3 | Documented in 0.12.0: [Settings shared by every component](https://github.com/jellalshadows/chart-base/blob/v1.6.1/README.md#settings-shared-by-every-component-yaml-anchors) | Unchanged: the YAML anchor |
+| G4 | Fixed in 1.2.0: an entry's `config` holds literals ([ADR-0066](https://github.com/jellalshadows/chart-base/blob/v1.6.1/docs/adr/0066-an-entry-level-config-for-literal-variables.md)) | Adopted: `frontend-check` gets `FRONTEND_ADDR` from its own `config` instead of `inheritEnv: true`, and `check-umbrella.sh` checks that address too (19 addresses) |
+| G5 | Partly: chart-base's own CI covers CronJob and Job aliases (0.12.0), and 1.6.0 adds a StatefulSet type ([ADR-0071](https://github.com/jellalshadows/chart-base/blob/v1.6.1/docs/adr/0071-a-statefulset-workload-type-with-a-claim-per-pod.md)) | Unchanged: Online Boutique has no other workload type, and its Redis stays an ephemeral Deployment, as upstream |
+| G6 | Fixed in 0.12.0: the chart no longer writes the label ([ADR-0063](https://github.com/jellalshadows/chart-base/blob/v1.6.1/docs/adr/0063-the-chart-does-not-write-app-kubernetes-io-component.md)) | No label of its own (nothing selects on it). Its removal rolled the 12 Deployments once at the move |
+| G7 | Documented in 0.12.0: [A Secret on the command line, and an image pinned by digest](https://github.com/jellalshadows/chart-base/blob/v1.6.1/README.md#a-secret-on-the-command-line-and-an-image-pinned-by-digest-redis) | Unchanged: `$(REDIS_PASSWORD)` from an `env` entry |
+| G8 | Documented in 0.12.0, in the same recipe | Unchanged: a versioned tag next to the digest |
+
+Besides G4 and G6, the render changed only in the `helm.sh/chart` label (`chart-base-1.6.1`), which is not on the pod
+templates. It still has the 76 objects of `ci/expected-objects.txt`, kubeconform 76/76 on 1.33.12 and 1.37.0, and
+`helm lint --strict` passes on Helm 4.3.0 and 3.22.0. Every other item of chart-base's upgrade guide from
+0.11.0 to 1.6.1 was checked and does not apply.
 
 ## How the evidence was produced
 

@@ -13,7 +13,10 @@
 
 - chart-base names every object `<release>-<alias>`. A subchart cannot read its siblings' values, and values are
   never templated, so the umbrella must write the release name into each address.
-- This is chart-base gap [G1](../findings.md#g1-sibling-addresses-hard-code-the-release-name).
+- This was chart-base gap [G1](../findings.md#g1-sibling-addresses-hard-code-the-release-name). From 0.12.0 chart-base
+  documents it as a recipe ("Calling a sibling component" in its README), and the release name stays in the values:
+  its `$(RELEASE)` form works only in `command` and `args`, and these addresses reach the containers through
+  `config`.
 
 ## Consequences
 

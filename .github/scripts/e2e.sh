@@ -180,7 +180,7 @@ pass "the 12 Deployments each have their replica available"
 kubectl get pods -n "$ns" -o custom-columns='POD:.metadata.name,UID:.spec.securityContext.runAsUser,SECCOMP:.spec.securityContext.seccompProfile.type,RESTARTS:.status.containerStatuses[*].restartCount,PHASE:.status.phase'
 # For the record: Helm's wait already required the loadgenerator to be available, so this cannot fail on its own.
 check="$(kubectl get pods -n "$ns" -l app.kubernetes.io/name=loadgenerator -o jsonpath='{.items[0].status.initContainerStatuses[?(@.name=="frontend-check")].state.terminated.exitCode}' || true)"
-[ "$check" = 0 ] || fail "the loadgenerator's init container frontend-check (inheritEnv, egress to the frontend) must have exited 0, got '$check'"
+[ "$check" = 0 ] || fail "the loadgenerator's init container frontend-check (its own FRONTEND_ADDR, egress to the frontend) must have exited 0, got '$check'"
 pass "the loadgenerator's init container frontend-check exited 0 (recorded: Helm's wait already required it)"
 # For the record: the API returns the HTTPRoute as Helm applied it.
 route="$(kubectl get httproute -n "$ns" boutique-frontend -o jsonpath='{.spec.rules[0].backendRefs[0].name}:{.spec.rules[0].backendRefs[0].port}' || true)"

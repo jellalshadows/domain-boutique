@@ -3,9 +3,10 @@
 # boutique, namespace boutique, every component enabled):
 #   1. every chart-base dependency has one version and one repository URL, and each alias is toggled by <alias>.enabled;
 #   2. the rendered objects are exactly ci/expected-objects.txt (kind/name): a renamed alias or release fails here;
-#   3. every sibling address a component is given (a ConfigMap value or an ExternalSecret template of the form
-#      <host>:<port>) names a rendered Service and one of its ports: the release name is part of the values
-#      (docs/findings.md G1), and a typo in an address renders without error and fails only at runtime.
+#   3. every sibling address a component is given (a ConfigMap value, an ExternalSecret template or a container's
+#      literal variable, of the form <host>:<port>) names a rendered Service and one of its ports: the release name is
+#      part of the values (docs/findings.md G1), and a typo in an address renders without error and fails only at
+#      runtime.
 # Usage: check-umbrella.sh <umbrella-dir>     Requires: helm (dependencies built), yq (mikefarah v4)
 set -euo pipefail
 
@@ -40,10 +41,15 @@ yq -N 'select(.kind == "Service") | .metadata.name + ":" + (.spec.ports[].port |
   > "$work/served.txt"
 declare -A served=()
 while read -r s; do served[$s]=1; done < "$work/served.txt"
-# Every value of the components' ConfigMaps and ExternalSecret templates that starts with <host>:<port>; a
-# StackExchange.Redis configuration string carries options after a comma.
+# Every value of the components' ConfigMaps and ExternalSecret templates, and every literal variable of a container or
+# an init container (an entry's config, chart-base 1.2.0), that starts with <host>:<port>; a StackExchange.Redis
+# configuration string carries options after a comma.
+# shellcheck disable=SC2016 # $object and $container are yq variables, not shell ones
 yq -N '(select(.kind == "ConfigMap") | .metadata.name + " " + (.data | to_entries[] | .key + " " + .value)),
-  (select(.kind == "ExternalSecret") | .metadata.name + " " + (.spec.target.template.data // {} | to_entries[] | .key + " " + .value))' \
+  (select(.kind == "ExternalSecret") | .metadata.name + " " + (.spec.target.template.data // {} | to_entries[] | .key + " " + .value)),
+  (select(.kind == "Deployment" or .kind == "Job") | .metadata.name as $object
+    | ((.spec.template.spec.initContainers // []) + (.spec.template.spec.containers // []))[] | .name as $container
+    | (.env // [])[] | select(.value != null) | $object + "/" + $container + " " + .name + " " + .value)' \
   "$work/rendered.yaml" > "$work/values.txt"
 # The frontend needs an address for the shopping assistant, which Online Boutique's release does not deploy.
 not_deployed="boutique-shoppingassistantservice:80"
@@ -56,7 +62,7 @@ while read -r object key value; do
   [ -n "${served[$address]:-}" ] \
     || fail "$object: $key=$address names no Service port of the render (served: ${!served[*]})"
 done < "$work/values.txt"
-# 18: the frontend's 8, checkoutservice's 6, one each for recommendationservice, loadgenerator, smoke and cartservice's
-# REDIS_ADDR. A lower count means an address this check no longer sees.
-[ "$checked" = 18 ] || fail "expected 18 sibling addresses in the render, found $checked: $(tr '\n' ';' < "$work/values.txt")"
+# 19: the frontend's 8, checkoutservice's 6, one each for recommendationservice, loadgenerator, its init container
+# frontend-check, smoke and cartservice's REDIS_ADDR. A lower count means an address this check no longer sees.
+[ "$checked" = 19 ] || fail "expected 19 sibling addresses in the render, found $checked: $(tr '\n' ';' < "$work/values.txt")"
 pass "the $checked sibling addresses name a rendered Service and port (but $not_deployed, not deployed)"
