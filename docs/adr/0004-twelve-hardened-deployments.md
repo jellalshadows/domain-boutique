@@ -9,7 +9,8 @@
 - All 12 workloads are chart-base Deployments with chart-base's defaults: Pod Security `restricted`, UID and GID 65532,
   `seccompProfile: RuntimeDefault`, a read-only root filesystem, a token-less ServiceAccount, a PodDisruptionBudget
   and `progressDeadlineSeconds: 240`.
-- The 10 services keep upstream's ports, probes, variables and resources. gRPC probes give their port by number.
+- The 10 services keep upstream's ports, probes, variables and resources. gRPC probes give their port by number,
+  which chart-base requires from 0.12.0 (G2).
 - Where upstream differs, chart-base's defaults are kept on purpose: a 30 s grace period with a 5 s preStop sleep
   instead of upstream's `terminationGracePeriodSeconds: 5` on eight Deployments (adservice, cartservice,
   currencyservice, emailservice, loadgenerator, paymentservice, productcatalogservice and recommendationservice);
@@ -20,8 +21,8 @@
   a restart empties every cart.
 - `loadgenerator` has no Service. Its init container `frontend-check` runs upstream's script verbatim and gets
   `FRONTEND_ADDR` as a literal of its own: an entry's `config` (chart-base 1.2.0), the main container's value
-  through a YAML anchor. Up to chart-base 0.11.0 an entry's `env` took references only, so it used `inheritEnv: true`
-  (docs/findings.md G4).
+  through a YAML anchor. An entry's `env` takes references only; up to chart-base 0.11.0 an entry had no `config`,
+  so it used `inheritEnv: true` (docs/findings.md G4).
 - Images are pinned by digest.
 - The fallback for an image that cannot run as UID 65532 is `podSecurityContext: {runAsUser: 1000, runAsGroup: 1000,
   fsGroup: 1000}` under that alias. Which aliases use it (decision 4, "Record which"): none, since every image ran as

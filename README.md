@@ -1,11 +1,13 @@
 # domain-boutique
 
 Google's [Online Boutique](https://github.com/GoogleCloudPlatform/microservices-demo) v0.10.7, deployed as a domain
-umbrella of [chart-base](https://github.com/jellalshadows/chart-base) 0.11.0. It runs 12 workloads and a smoke Job,
+umbrella of [chart-base](https://github.com/jellalshadows/chart-base) 1.6.1. It runs 12 workloads and a smoke Job,
 one chart-base alias each, configured with values alone, and deploys with helmfile.
 
-This repository is how chart-base 1.0 gets validated: its criterion 2 asks for a real domain umbrella deployed with
-helmfile. What the umbrella revealed about chart-base is in [docs/findings.md](docs/findings.md).
+This repository validated chart-base 1.0, whose criterion 2 asks for a real domain umbrella deployed with helmfile,
+and it was built on chart-base 0.11.0. It now runs on the 1.x line, as chart-base's first real consumer of the 1.0
+contract. What the umbrella revealed about chart-base, and where each gap stands at 1.6.1, is in
+[docs/findings.md](docs/findings.md).
 
 ## Quick path: run it on kind
 
@@ -67,7 +69,7 @@ Every component has a NetworkPolicy matching this table, plus DNS egress.
 
 | Decision | Record |
 |---|---|
-| One chart-base 0.11.0 dependency per component, `Chart.lock` committed, never published | [ADR-0001](docs/adr/0001-one-chart-base-dependency-per-component.md) |
+| One chart-base 1.6.1 dependency per component, `Chart.lock` committed, never published | [ADR-0001](docs/adr/0001-one-chart-base-dependency-per-component.md) |
 | Each component's configuration under its alias; a root schema; one YAML anchor for the shared label | [ADR-0002](docs/adr/0002-values-under-each-alias.md) |
 | The release name `boutique` is part of the values; helmfile pins it | [ADR-0003](docs/adr/0003-release-name-pinned-by-helmfile.md) |
 | Twelve Deployments on chart-base's hardened defaults (Pod Security `restricted`, UID 65532) | [ADR-0004](docs/adr/0004-twelve-hardened-deployments.md) |

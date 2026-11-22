@@ -87,7 +87,7 @@ productcatalogservice:
   resources:
     requests: {cpu: 100m, memory: 64Mi}
     limits: {cpu: 200m, memory: 128Mi}
-  # A gRPC probe takes a port number only (docs/findings.md G2).
+  # A gRPC probe takes a port number only; chart-base rejects a name from 0.12.0 (docs/findings.md G2).
   probes:
     readiness: {grpc: {port: 3550}}
     liveness: {grpc: {port: 3550}}
