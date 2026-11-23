@@ -9,6 +9,14 @@ and it was built on chart-base 0.11.0. It now runs on the 1.x line, as chart-bas
 contract. What the umbrella revealed about chart-base, and where each gap stands at 1.6.1, is in
 [docs/findings.md](docs/findings.md).
 
+![A real run of e2e.sh on kind: the platform, helmfile -e ci sync, the 13 pods running as UID 65532 with
+RuntimeDefault seccomp, then the smoke Job, the storefront, an add to cart, an order and both ExternalSecrets, each
+reported ok](docs/assets/e2e-on-kind.gif)
+
+*A real run of [`e2e.sh`](.github/scripts/e2e.sh) on kind with Kubernetes 1.37.0 (WSL2, 2026-11-23), waits capped
+and sped up 2×. It stops before the NetworkPolicy checks: the WSL2 kernel is built without `CONFIG_NFT_QUEUE`, which
+kindnet needs to enforce NetworkPolicy, so those checks run in [CI](.github/workflows/ci.yaml) on every pull request.*
+
 ## Quick path: run it on kind
 
 You need an amd64 machine (the Online Boutique images are `linux/amd64` only), kind, kubectl, curl, Helm 4.3.0 (or
